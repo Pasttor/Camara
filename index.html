@@ -1,117 +1,136 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pixel Cam Lab</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Pro Cam Web</title>
     <style>
-      body {
-        margin: 0;
-        background: #000;
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-      }
-      video {
-        width: 100%;
-        height: 80%;
-        object-fit: cover;
-      }
-      .controls {
-        height: 20%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 20px;
-        background: #111;
-      }
-      button {
-        padding: 15px 25px;
-        border-radius: 50px;
-        border: none;
-        font-size: 16px;
-        font-weight: bold;
-        cursor: pointer;
-      }
-      #btn-capture {
-        background: white;
-        color: black;
-        width: 70px;
-        height: 70px;
-        border-radius: 50%;
-      }
-      #btn-switch {
-        background: #333;
-        color: white;
-      }
+        body { margin: 0; background: #000; font-family: sans-serif; color: white; overflow: hidden; }
+        #video { width: 100vw; height: 100vh; object-fit: cover; }
+        
+        /* Controles superiores (Zoom y Lente) */
+        .top-bar { position: absolute; top: 10px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; background: rgba(0,0,0,0.4); padding: 10px 0; }
+        .slider-container { width: 80%; display: flex; align-items: center; gap: 10px; }
+        input[type=range] { flex-grow: 1; }
+
+        /* Controles inferiores (Disparo y Flash) */
+        .bottom-bar { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: space-around; align-items: center; }
+        
+        .btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 15px; border-radius: 10px; font-size: 14px; }
+        #btn-capture { width: 80px; height: 80px; background: white; border-radius: 50%; border: 5px solid rgba(0,0,0,0.2); }
+        #btn-capture:active { transform: scale(0.9); }
     </style>
-  </head>
-  <body>
+</head>
+<body>
+
     <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
 
-    <canvas id="canvas" style="display: none"></canvas>
+    <div class="top-bar">
+        <div class="slider-container">
+            <span>Zoom</span>
+            <input type="range" id="zoom-slider" min="1" max="10" step="0.1" value="1">
+        </div>
+        <div id="lens-info" style="font-size: 12px; opacity: 0.7;">Detectando lentes...</div>
+    </div>
 
-    <div class="controls">
-      <button id="btn-switch">🔄 Girar</button>
-      <button id="btn-capture"></button>
-      <div style="width: 80px"></div>
+    <div class="bottom-bar">
+        <button class="btn" id="btn-flash">🔦 Flash Off</button>
+        <button id="btn-capture"></button>
+        <button class="btn" id="btn-switch">🔄 Cambiar Lente</button>
     </div>
 
     <script>
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const btnCapture = document.getElementById('btn-capture');
-      const btnSwitch = document.getElementById('btn-switch');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const zoomSlider = document.getElementById('zoom-slider');
+        const btnFlash = document.getElementById('btn-flash');
+        const btnSwitch = document.getElementById('btn-switch');
+        const lensInfo = document.getElementById('lens-info');
+        
+        let currentStream;
+        let track;
+        let devices = [];
+        let currentDeviceIndex = 0;
+        let flashOn = false;
 
-      let currentStream;
-      let useFrontCamera = false; // Empieza con la trasera
-
-      // Función para iniciar la cámara
-      async function startCamera() {
-        if (currentStream) {
-          currentStream.getTracks().forEach((track) => track.stop());
+        // 1. Buscar todos los lentes disponibles
+        async function getLenses() {
+            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            devices = allDevices.filter(d => d.kind === 'videoinput');
+            lensInfo.innerText = `Lentes encontrados: ${devices.length}`;
         }
 
-        const constraints = {
-          video: {
-            facingMode: useFrontCamera ? 'user' : 'environment',
-            width: { ideal: 4096 }, // Pedir máxima resolución posible (4K)
-            height: { ideal: 2160 },
-          },
-        };
+        // 2. Iniciar cámara con controles
+        async function startCamera(deviceId) {
+            if (currentStream) {
+                currentStream.getTracks().forEach(t => t.stop());
+            }
 
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          video.srcObject = stream;
-          currentStream = stream;
-        } catch (err) {
-          alert('Error al acceder a la cámara: ' + err);
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    width: { ideal: 4096 },
+                    height: { ideal: 2160 }
+                }
+            };
+
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                track = currentStream.getVideoTracks()[0];
+                
+                // Configurar capacidades (Zoom y Flash)
+                const capabilities = track.getCapabilities();
+                if (capabilities.zoom) {
+                    zoomSlider.min = capabilities.zoom.min;
+                    zoomSlider.max = capabilities.zoom.max;
+                    zoomSlider.step = capabilities.zoom.step;
+                }
+            } catch (e) {
+                console.error(e);
+            }
         }
-      }
 
-      // Tomar Foto y Guardar
-      btnCapture.addEventListener('click', () => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const context = canvas.getContext('2d');
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Evento: Zoom
+        zoomSlider.addEventListener('input', () => {
+            if (track) {
+                track.applyConstraints({ advanced: [{ zoom: zoomSlider.value }] });
+            }
+        });
 
-        // Crear enlace de descarga
-        const link = document.createElement('a');
-        const fecha = new Date().toISOString().replace(/:/g, '-');
-        link.download = `PixelFoto_${fecha}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click(); // Forzar descarga automática
-      });
+        // Evento: Flash (Antorcha)
+        btnFlash.addEventListener('click', async () => {
+            if (track) {
+                flashOn = !flashOn;
+                try {
+                    await track.applyConstraints({ advanced: [{ torch: flashOn }] });
+                    btnFlash.innerText = flashOn ? "🔦 Flash ON" : "🔦 Flash OFF";
+                } catch (e) {
+                    alert("Este lente no soporta Flash");
+                }
+            }
+        });
 
-      // Cambiar entre frontal y trasera
-      btnSwitch.addEventListener('click', () => {
-        useFrontCamera = !useFrontCamera;
-        startCamera();
-      });
+        // Evento: Cambiar Lente (Ciclo entre todos los sensores)
+        btnSwitch.addEventListener('click', () => {
+            currentDeviceIndex = (currentDeviceIndex + 1) % devices.length;
+            startCamera(devices[currentDeviceIndex].deviceId);
+        });
 
-      // Iniciar al cargar
-      startCamera();
+        // Evento: Capturar
+        document.getElementById('btn-capture').addEventListener('click', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            const link = document.createElement('a');
+            link.download = `Pixel_Pro_${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+
+        // Inicio
+        getLenses().then(() => startCamera());
     </script>
-  </body>
+</body>
 </html>
