@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pixel Cam Lab</title>
+    <style>
+      body {
+        margin: 0;
+        background: #000;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      video {
+        width: 100%;
+        height: 80%;
+        object-fit: cover;
+      }
+      .controls {
+        height: 20%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+        background: #111;
+      }
+      button {
+        padding: 15px 25px;
+        border-radius: 50px;
+        border: none;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      #btn-capture {
+        background: white;
+        color: black;
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+      }
+      #btn-switch {
+        background: #333;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <video id="video" autoplay playsinline></video>
+
+    <canvas id="canvas" style="display: none"></canvas>
+
+    <div class="controls">
+      <button id="btn-switch">🔄 Girar</button>
+      <button id="btn-capture"></button>
+      <div style="width: 80px"></div>
+    </div>
+
+    <script>
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const btnCapture = document.getElementById('btn-capture');
+      const btnSwitch = document.getElementById('btn-switch');
+
+      let currentStream;
+      let useFrontCamera = false; // Empieza con la trasera
+
+      // Función para iniciar la cámara
+      async function startCamera() {
+        if (currentStream) {
+          currentStream.getTracks().forEach((track) => track.stop());
+        }
+
+        const constraints = {
+          video: {
+            facingMode: useFrontCamera ? 'user' : 'environment',
+            width: { ideal: 4096 }, // Pedir máxima resolución posible (4K)
+            height: { ideal: 2160 },
+          },
+        };
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          video.srcObject = stream;
+          currentStream = stream;
+        } catch (err) {
+          alert('Error al acceder a la cámara: ' + err);
+        }
+      }
+
+      // Tomar Foto y Guardar
+      btnCapture.addEventListener('click', () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Crear enlace de descarga
+        const link = document.createElement('a');
+        const fecha = new Date().toISOString().replace(/:/g, '-');
+        link.download = `PixelFoto_${fecha}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click(); // Forzar descarga automática
+      });
+
+      // Cambiar entre frontal y trasera
+      btnSwitch.addEventListener('click', () => {
+        useFrontCamera = !useFrontCamera;
+        startCamera();
+      });
+
+      // Iniciar al cargar
+      startCamera();
+    </script>
+  </body>
+</html>
