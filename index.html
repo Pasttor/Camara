@@ -2,135 +2,164 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pixel Pro Cam Web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel Unified Cam</title>
     <style>
-        body { margin: 0; background: #000; font-family: sans-serif; color: white; overflow: hidden; }
-        #video { width: 100vw; height: 100vh; object-fit: cover; }
+        /* Estilos generales para pantalla completa */
+        body { margin: 0; background: #000; font-family: sans-serif; color: white; overflow: hidden; height: 100vh; width: 100vw; }
+        #video-background { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1; opacity: 0.6; /* Un poco transparente para destacar los controles */ }
         
-        /* Controles superiores (Zoom y Lente) */
-        .top-bar { position: absolute; top: 10px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; background: rgba(0,0,0,0.4); padding: 10px 0; }
-        .slider-container { width: 80%; display: flex; align-items: center; gap: 10px; }
-        input[type=range] { flex-grow: 1; }
+        /* --- BARRA SUPERIOR (Controles WebApp) --- */
+        .top-bar { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.5); padding: 15px 0; display: flex; flex-direction: column; align-items: center; }
+        .slider-container { width: 85%; display: flex; align-items: center; gap: 15px; font-weight: bold; }
+        input[type=range] { flex-grow: 1; height: 5px; }
+        #lens-info { font-size: 11px; margin-top: 5px; opacity: 0.8; }
 
-        /* Controles inferiores (Disparo y Flash) */
-        .bottom-bar { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: space-around; align-items: center; }
-        
-        .btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 15px; border-radius: 10px; font-size: 14px; }
-        #btn-capture { width: 80px; height: 80px; background: white; border-radius: 50%; border: 5px solid rgba(0,0,0,0.2); }
-        #btn-capture:active { transform: scale(0.9); }
+        /* --- BARRA INFERIOR (Controles Nativos) --- */
+        .bottom-bar-unified {
+            position: absolute; bottom: 0; width: 100%; height: 120px;
+            display: flex; justify-content: space-evenly; align-items: center;
+            background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+            padding-bottom: 20px;
+        }
+
+        /* Estilo de los botones laterales */
+        .side-btn {
+            width: 60px; height: 60px; border-radius: 50%;
+            background: rgba(255,255,255,0.15); color: white; border: none;
+            font-size: 24px; display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
+        .side-btn span { font-size: 12px; display: block; margin-top: 2px; }
+
+        /* Botón Central de FOTO (Estilo Google) */
+        #btn-native-photo {
+            width: 85px; height: 85px;
+            background: white; border-radius: 50%;
+            border: 4px solid rgba(255,255,255,0.3);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        #btn-native-photo:active { transform: scale(0.95); background: #eee; }
     </style>
 </head>
 <body>
 
-    <video id="video" autoplay playsinline></video>
-    <canvas id="canvas" style="display:none;"></canvas>
-
+    <video id="video-background" autoplay playsinline muted></video>
+    
     <div class="top-bar">
         <div class="slider-container">
-            <span>Zoom</span>
+            <span>🔍 Zoom Web</span>
             <input type="range" id="zoom-slider" min="1" max="10" step="0.1" value="1">
         </div>
-        <div id="lens-info" style="font-size: 12px; opacity: 0.7;">Detectando lentes...</div>
+        <div id="lens-info">Cargando lentes del Pixel...</div>
     </div>
 
-    <div class="bottom-bar">
-        <button class="btn" id="btn-flash">🔦 Flash Off</button>
-        <button id="btn-capture"></button>
-        <button class="btn" id="btn-switch">🔄 Cambiar Lente</button>
+    <div class="bottom-bar-unified">
+        
+        <button class="side-btn" id="trigger-video">
+            <div>📹<br><span>Video Pro</span></div>
+        </button>
+
+        <button id="trigger-photo"></button>
+
+        <button class="side-btn" id="btn-switch-web">
+            <div>🔄<br><span>Visor Web</span></div>
+        </button>
     </div>
+
+    <input type="file" id="native-photo-input" accept="image/*" capture="environment" style="display:none;">
+    <input type="file" id="native-video-input" accept="video/*" capture="environment" style="display:none;">
+
 
     <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
+        // =========================================
+        // PARTE 1: Lógica de los Controles Nativos
+        // =========================================
+        const triggerPhoto = document.getElementById('trigger-photo');
+        const triggerVideo = document.getElementById('trigger-video');
+        const nativePhotoInput = document.getElementById('native-photo-input');
+        const nativeVideoInput = document.getElementById('native-video-input');
+
+        // Conectar los botones visibles a los inputs ocultos
+        triggerPhoto.addEventListener('click', () => nativePhotoInput.click());
+        triggerVideo.addEventListener('click', () => nativeVideoInput.click());
+
+        // Función genérica para manejar el archivo que regresa la app nativa
+        function handleNativeCapture(inputElement, prefix, ext) {
+            if (inputElement.files && inputElement.files[0]) {
+                const file = inputElement.files[0];
+                const url = URL.createObjectURL(file);
+                const link = document.createElement('a');
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                link.href = url;
+                link.download = `Pixel7Pro_${prefix}_${timestamp}.${ext}`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url); // Limpiar memoria
+                // Opcional: Vibrar para confirmar
+                if (navigator.vibrate) navigator.vibrate(200);
+            }
+        }
+
+        // Escuchar cuando regresan los archivos
+        nativePhotoInput.addEventListener('change', (e) => handleNativeCapture(e.target, 'FOTO_PRO', 'jpg'));
+        nativeVideoInput.addEventListener('change', (e) => handleNativeCapture(e.target, 'VIDEO_PRO', 'mp4'));
+
+
+        // =========================================
+        // PARTE 2: Lógica del Visor Web de Fondo (V2.0)
+        // =========================================
+        const videoBg = document.getElementById('video-background');
         const zoomSlider = document.getElementById('zoom-slider');
-        const btnFlash = document.getElementById('btn-flash');
-        const btnSwitch = document.getElementById('btn-switch');
+        const btnSwitchWeb = document.getElementById('btn-switch-web');
         const lensInfo = document.getElementById('lens-info');
         
         let currentStream;
-        let track;
+        let videoTrack;
         let devices = [];
         let currentDeviceIndex = 0;
-        let flashOn = false;
 
-        // 1. Buscar todos los lentes disponibles
         async function getLenses() {
-            const allDevices = await navigator.mediaDevices.enumerateDevices();
-            devices = allDevices.filter(d => d.kind === 'videoinput');
-            lensInfo.innerText = `Lentes encontrados: ${devices.length}`;
+            try {
+                const allDevices = await navigator.mediaDevices.enumerateDevices();
+                devices = allDevices.filter(d => d.kind === 'videoinput');
+                // Intentar filtrar para dejar solo los traseros principales si hay muchos
+                const backLenses = devices.filter(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
+                if (backLenses.length > 1) devices = backLenses;
+                lensInfo.innerText = `Sensores disponibles para visor web: ${devices.length}`;
+            } catch(e) { lensInfo.innerText = "Error detectando lentes"; }
         }
 
-        // 2. Iniciar cámara con controles
-        async function startCamera(deviceId) {
-            if (currentStream) {
-                currentStream.getTracks().forEach(t => t.stop());
-            }
-
-            const constraints = {
-                video: {
-                    deviceId: deviceId ? { exact: deviceId } : undefined,
-                    width: { ideal: 4096 },
-                    height: { ideal: 2160 }
-                }
-            };
-
+        async function startWebCamera(deviceId) {
+            if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+            const constraints = { video: { deviceId: deviceId ? { exact: deviceId } : undefined, facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }};
             try {
                 currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = currentStream;
-                track = currentStream.getVideoTracks()[0];
-                
-                // Configurar capacidades (Zoom y Flash)
-                const capabilities = track.getCapabilities();
-                if (capabilities.zoom) {
-                    zoomSlider.min = capabilities.zoom.min;
-                    zoomSlider.max = capabilities.zoom.max;
-                    zoomSlider.step = capabilities.zoom.step;
-                }
-            } catch (e) {
-                console.error(e);
-            }
+                videoBg.srcObject = currentStream;
+                videoTrack = currentStream.getVideoTracks()[0];
+                const cap = videoTrack.getCapabilities();
+                if (cap.zoom) {
+                    zoomSlider.min = cap.zoom.min; zoomSlider.max = cap.zoom.max; zoomSlider.step = cap.zoom.step || 0.1; zoomSlider.disabled = false;
+                } else { zoomSlider.disabled = true; }
+            } catch (e) { console.error(e); }
         }
 
-        // Evento: Zoom
         zoomSlider.addEventListener('input', () => {
-            if (track) {
-                track.applyConstraints({ advanced: [{ zoom: zoomSlider.value }] });
+            if (videoTrack) videoTrack.applyConstraints({ advanced: [{ zoom: parseFloat(zoomSlider.value) }] });
+        });
+
+        btnSwitchWeb.addEventListener('click', () => {
+            if (devices.length > 0) {
+                currentDeviceIndex = (currentDeviceIndex + 1) % devices.length;
+                startWebCamera(devices[currentDeviceIndex].deviceId);
+                // Vibración corta al cambiar lente web
+                if (navigator.vibrate) navigator.vibrate(50);
             }
         });
 
-        // Evento: Flash (Antorcha)
-        btnFlash.addEventListener('click', async () => {
-            if (track) {
-                flashOn = !flashOn;
-                try {
-                    await track.applyConstraints({ advanced: [{ torch: flashOn }] });
-                    btnFlash.innerText = flashOn ? "🔦 Flash ON" : "🔦 Flash OFF";
-                } catch (e) {
-                    alert("Este lente no soporta Flash");
-                }
-            }
-        });
-
-        // Evento: Cambiar Lente (Ciclo entre todos los sensores)
-        btnSwitch.addEventListener('click', () => {
-            currentDeviceIndex = (currentDeviceIndex + 1) % devices.length;
-            startCamera(devices[currentDeviceIndex].deviceId);
-        });
-
-        // Evento: Capturar
-        document.getElementById('btn-capture').addEventListener('click', () => {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            const link = document.createElement('a');
-            link.download = `Pixel_Pro_${Date.now()}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-        });
-
-        // Inicio
-        getLenses().then(() => startCamera());
+        // Iniciar visor de fondo
+        getLenses().then(() => startWebCamera());
     </script>
 </body>
 </html>
